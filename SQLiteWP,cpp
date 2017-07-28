@@ -1,0 +1,112 @@
+#include "SQLiteWP.h"
+
+SQLiteWP::SQLiteWP(char* fileName)
+: m_bStatementPrepared(false),
+  m_bStepOK(false),
+  m_bStepDone(false),
+  m_pStatement(NULL),
+  m_bTransactionBegined(false),
+  m_bCommited(false)
+{
+    int ret = sqlite3_open(fileName, &m_pDataBase);
+    if( ret != SQLITE_OK )
+    {
+        sqlite3_close(m_pDataBase);
+
+        throw SQLiteException(sqlite3_errmsg(m_pDataBase));
+    }
+}
+
+SQLiteWP::~SQLiteWP(void)
+{
+    if ( true == m_bTransactionBegined && false == m_bCommited )
+    {
+        sqlite3_exec(m_pDataBase, "ROLLBACK", NULL, NULL, NULL);
+    }
+
+    if ( true == m_bStatementPrepared )
+    {
+        sqlite3_finalize(m_pStatement);
+    }
+
+    sqlite3_close(m_pDataBase);
+}
+
+void SQLiteWP::PrepareStatement(char* query)
+{
+    int ret = sqlite3_prepare_v2(m_pDataBase, query, -1, &m_pStatement, NULL);
+    if( ret != SQLITE_OK )
+    {
+        throw SQLiteException(sqlite3_errmsg(m_pDataBase));
+    }
+
+    sqlite3_reset(m_pStatement);
+
+    m_bStatementPrepared = true;
+}
+
+int SQLiteWP::Step()
+{
+    //クエリの実行が終了している場合、例外をスローする
+    if ( true == m_bStepDone )
+    {
+        throw SQLiteException(sqlite3_errmsg(m_pDataBase));
+    }
+
+    //行データを取得するために、クエリのステップを実行する
+    int status = sqlite3_step(m_pStatement);
+    if( SQLITE_ROW == status )
+    {
+        m_bStepOK = true;
+    }
+    else if( SQLITE_DONE == status )
+    {
+        m_bStepOK = false;
+        m_bStepDone = true;
+    }
+    else
+    {
+        m_bStepOK = false;
+        m_bStepDone = false;
+        throw SQLiteException(sqlite3_errmsg(m_pDataBase));
+    }
+
+    return m_bStepOK;
+}
+
+void SQLiteWP::Exec(char* query)
+{
+    const int ret = sqlite3_exec(m_pDataBase, query, NULL, NULL, NULL);
+}
+
+sqlite3_stmt* SQLiteWP::GetStatement()
+{
+    return m_pStatement;
+}
+
+int SQLiteWP::BeginTransaction()
+{
+    int ret = sqlite3_exec(m_pDataBase, "BEGIN", NULL, NULL, NULL);
+    if ( ret != SQLITE_OK )
+    {
+        throw SQLiteException(sqlite3_errmsg(m_pDataBase));
+    }
+    m_bTransactionBegined = true;
+}
+
+int SQLiteWP::CommitTransaction()
+{
+    //既にコミット済みの場合、例外をスローする
+    if ( true == m_bCommited ) 
+    {
+        throw SQLiteException("Transaction already commited.");
+    }
+
+    int ret = sqlite3_exec(m_pDataBase, "COMMIT", NULL, NULL, NULL);
+    if ( ret != SQLITE_OK )
+    {
+        throw SQLiteException(sqlite3_errmsg(m_pDataBase));
+    }
+
+    m_bCommited = true;
+}
